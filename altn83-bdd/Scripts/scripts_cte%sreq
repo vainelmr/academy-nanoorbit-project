@@ -1,0 +1,229 @@
+/* PARTIE 2 - EXERCICE 5 */
+
+-- Attendu :
+-- SAT-003 | 1 fenêtre réalisée | 1680 total | 1680 moyen
+-- SAT-001 | 1 fenêtre réalisée | 1250 total | 1250 moyen
+-- SAT-002 | 1 fenêtre réalisée | 890 total | 890 moyen
+
+WITH stats_satellites AS (
+    SELECT
+        s.id_satellite,
+        s.nom_satellite,
+        COUNT(*) AS nb_fenetres_realisees,
+        SUM(f.volume_donnees) AS volume_total,
+        ROUND(AVG(f.volume_donnees), 2) AS volume_moyen
+    FROM SATELLITE s
+    JOIN FENETRE_COM f
+        ON s.id_satellite = f.id_satellite
+    WHERE f.statut = 'Réalisée'
+    GROUP BY
+        s.id_satellite,
+        s.nom_satellite
+)
+SELECT *
+FROM (
+    SELECT *
+    FROM stats_satellites
+    ORDER BY volume_total DESC
+)
+WHERE ROWNUM <= 3;
+
+/* PARTIE 2 - EXERCICE 6 */
+
+-- Attendu :
+-- centre 1 : 5 fenêtres | volume total 3820 | station plus active GS-TLS-01
+-- centre 3 : aucune ligne si jointure interne conservée
+
+WITH params AS (
+    SELECT
+        TO_TIMESTAMP('2024-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AS date_debut,
+        TO_TIMESTAMP('2024-02-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AS date_fin
+    FROM dual
+),
+fenetres_mois AS (
+    SELECT
+        c.id_centre,
+        c.nom_centre,
+        st.code_station,
+        st.nom_station,
+        f.id_fenetre,
+        NVL(f.volume_donnees, 0) AS volume_donnees
+    FROM FENETRE_COM f
+    JOIN STATION_SOL st
+        ON f.code_station = st.code_station
+    JOIN AFFECTATION_STATION a
+        ON st.code_station = a.code_station
+    JOIN CENTRE_CONTROLE c
+        ON a.id_centre = c.id_centre
+    CROSS JOIN params p
+    WHERE f.datetime_debut >= p.date_debut
+      AND f.datetime_debut < p.date_fin
+),
+stats_centres AS (
+    SELECT
+        id_centre,
+        nom_centre,
+        COUNT(id_fenetre) AS nb_fenetres,
+        SUM(volume_donnees) AS volume_total
+    FROM fenetres_mois
+    GROUP BY id_centre, nom_centre
+),
+stations_actives AS (
+    SELECT
+        id_centre,
+        nom_centre,
+        code_station,
+        nom_station,
+        COUNT(id_fenetre) AS nb_fenetres_station,
+        ROW_NUMBER() OVER (
+            PARTITION BY id_centre
+            ORDER BY COUNT(id_fenetre) DESC, code_station
+        ) AS rn
+    FROM fenetres_mois
+    GROUP BY id_centre, nom_centre, code_station, nom_station
+)
+SELECT
+    sc.id_centre,
+    sc.nom_centre,
+    sc.nb_fenetres,
+    sc.volume_total,
+    sa.code_station AS station_plus_active,
+    sa.nom_station
+FROM stats_centres sc
+LEFT JOIN stations_actives sa
+    ON sc.id_centre = sa.id_centre
+   AND sa.rn = 1
+ORDER BY sc.id_centre;
+
+/* PARTIE 2 - EXERCICE 7 */
+
+-- Attendu :
+-- affichage indenté des centres
+-- GS-KIR-01 et GS-TLS-01 sous le centre 1
+-- GS-SGP-01 sous le centre 3
+-- puis les 5 fenêtres sous leurs stations respectives
+
+WITH hierarchie (
+    niveau,
+    type_noeud,
+    id_noeud,
+    parent_id,
+    libelle,
+    tri_ordre
+) AS (
+    SELECT
+        1 AS niveau,
+        'CENTRE' AS type_noeud,
+        c.id_centre AS id_noeud,
+        CAST(NULL AS VARCHAR2(20)) AS parent_id,
+        c.nom_centre AS libelle,
+        c.id_centre AS tri_ordre
+    FROM CENTRE_CONTROLE c
+    UNION ALL
+    SELECT
+        2 AS niveau,
+        'STATION' AS type_noeud,
+        st.code_station AS id_noeud,
+        a.id_centre AS parent_id,
+        st.nom_station AS libelle,
+        a.id_centre || '-' || st.code_station AS tri_ordre
+    FROM AFFECTATION_STATION a
+    JOIN STATION_SOL st ON a.code_station = st.code_station
+    UNION ALL
+    SELECT
+        3 AS niveau,
+        'FENETRE' AS type_noeud,
+        TO_CHAR(f.id_fenetre) AS id_noeud,
+        f.code_station AS parent_id,
+        'Fenêtre #' || f.id_fenetre || ' - ' ||
+        TO_CHAR(f.datetime_debut, 'DD/MM/YYYY HH24:MI:SS') AS libelle,
+        f.code_station || '-' || TO_CHAR(f.id_fenetre) AS tri_ordre
+    FROM FENETRE_COM f
+)
+SELECT
+    LPAD(' ', (niveau - 1) * 4) || libelle AS hierarchie_affichee,
+    type_noeud,
+    id_noeud,
+    parent_id
+FROM hierarchie
+ORDER BY tri_ordre, niveau;
+
+/* PARTIE 3 - EXERCICE 8 */
+
+-- Attendu :
+-- moyenne générale = 1273.33
+-- fenêtre 3 retournée
+-- écart à la moyenne = 406.67
+
+SELECT
+    f.id_fenetre,
+    f.id_satellite,
+    f.code_station,
+    f.volume_donnees,
+    (
+        SELECT ROUND(AVG(f2.volume_donnees), 2)
+        FROM FENETRE_COM f2
+        WHERE f2.volume_donnees IS NOT NULL
+    ) AS moyenne_generale,
+    ROUND(
+        f.volume_donnees - (
+            SELECT AVG(f3.volume_donnees)
+            FROM FENETRE_COM f3
+            WHERE f3.volume_donnees IS NOT NULL
+        ),
+        2
+    ) AS ecart_a_moyenne
+FROM FENETRE_COM f
+WHERE f.volume_donnees IS NOT NULL
+  AND f.volume_donnees > (
+        SELECT AVG(f4.volume_donnees)
+        FROM FENETRE_COM f4
+        WHERE f4.volume_donnees IS NOT NULL
+  )
+ORDER BY f.volume_donnees DESC;
+
+/* PARTIE 3 - EXERCICE 9 */
+
+-- Attendu :
+-- SAT-001 -> 15/01/2024 09:14:00 | GS-KIR-01 | 1250
+-- SAT-002 -> 15/01/2024 11:52:00 | GS-TLS-01 | 890
+-- SAT-003 -> 16/01/2024 08:30:00 | GS-KIR-01 | 1680
+-- SAT-004 -> null
+-- SAT-005 -> null
+
+SELECT
+    s.id_satellite,
+    s.nom_satellite,
+    f.datetime_debut,
+    f.code_station,
+    f.volume_donnees
+FROM SATELLITE s
+LEFT JOIN FENETRE_COM f
+    ON s.id_satellite = f.id_satellite
+   AND f.statut = 'Réalisée'
+   AND f.datetime_debut = (
+        SELECT MAX(f2.datetime_debut)
+        FROM FENETRE_COM f2
+        WHERE f2.id_satellite = s.id_satellite
+          AND f2.statut = 'Réalisée'
+   )
+ORDER BY s.id_satellite;
+
+/* PARTIE 3 - EXERCICE 10 */
+
+-- Attendu :
+-- SAT-004 | NanoOrbit-Delta | En veille
+-- SAT-005 | NanoOrbit-Epsilon | Désorbité
+
+SELECT
+    s.id_satellite,
+    s.nom_satellite,
+    s.statut
+FROM SATELLITE s
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM FENETRE_COM f
+    WHERE f.id_satellite = s.id_satellite
+      AND f.statut = 'Réalisée'
+)
+ORDER BY s.id_satellite;

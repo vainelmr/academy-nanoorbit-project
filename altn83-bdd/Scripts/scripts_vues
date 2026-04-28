@@ -1,0 +1,112 @@
+/* PARTIE 1 - V1 */
+
+CREATE OR REPLACE VIEW v_satellites_operationnels AS
+SELECT
+    s.id_satellite,
+    s.nom_satellite,
+    s.statut,
+    o.type_orbite,
+    o.altitude,
+    COUNT(e.ref_instrument) AS nb_instruments_embarques,
+    CASE
+        WHEN s.capacite_batterie >= 60 THEN 'Excellente'
+        WHEN s.capacite_batterie >= 30 THEN 'Correcte'
+        ELSE 'Limitée'
+    END AS statut_batterie
+FROM SATELLITE s
+JOIN ORBITE o
+    ON s.id_orbite = o.id_orbite
+LEFT JOIN EMBARQUEMENT e
+    ON s.id_satellite = e.id_satellite
+WHERE s.statut = 'Opérationnel'
+GROUP BY
+    s.id_satellite,
+    s.nom_satellite,
+    s.statut,
+    o.type_orbite,
+    o.altitude,
+    s.capacite_batterie;
+
+/* Select test */
+SELECT *
+FROM v_satellites_operationnels
+ORDER BY id_satellite;
+
+/* PARTIE 1 - V2 */
+
+CREATE OR REPLACE VIEW v_fenetres_detail AS
+SELECT
+    f.id_fenetre,
+    f.datetime_debut,
+    f.duree,
+    LPAD(FLOOR(f.duree / 60), 2, '0') || ':' || LPAD(MOD(f.duree, 60), 2, '0') AS duree_formatee,
+    f.elevation_max,
+    f.volume_donnees,
+    f.statut,
+    s.id_satellite,
+    s.nom_satellite,
+    st.code_station,
+    st.nom_station,
+    c.id_centre,
+    c.nom_centre,
+    c.ville AS ville_centre
+FROM FENETRE_COM f
+JOIN SATELLITE s
+    ON f.id_satellite = s.id_satellite
+JOIN STATION_SOL st
+    ON f.code_station = st.code_station
+LEFT JOIN AFFECTATION_STATION a
+    ON st.code_station = a.code_station
+LEFT JOIN CENTRE_CONTROLE c
+    ON a.id_centre = c.id_centre;
+
+/* Select test */
+SELECT id_fenetre,
+       nom_satellite,
+       nom_station,
+       nom_centre,
+       duree_formatee,
+       volume_donnees,
+       statut
+FROM v_fenetres_detail
+ORDER BY id_fenetre;
+
+/* PARTIE 1 - V3 */
+
+CREATE OR REPLACE VIEW v_stats_missions AS
+SELECT
+    m.id_mission,
+    m.nom_mission,
+    m.statut_mission,
+    COUNT(DISTINCT p.id_satellite) AS nb_satellites,
+    LISTAGG(DISTINCT o.type_orbite, ', ') WITHIN GROUP (ORDER BY o.type_orbite) AS types_orbites,
+    NVL(SUM(
+        CASE
+            WHEN f.statut = 'Réalisée'
+             AND f.datetime_debut >= CAST(m.date_debut AS TIMESTAMP)
+             AND (
+                    m.date_fin IS NULL
+                    OR f.datetime_debut <= CAST(m.date_fin AS TIMESTAMP) + INTERVAL '23:59:59' HOUR TO SECOND
+                 )
+            THEN f.volume_donnees
+            ELSE 0
+        END
+    ), 0) AS volume_total_telecharge
+FROM MISSION m
+LEFT JOIN PARTICIPATION p
+    ON m.id_mission = p.id_mission
+LEFT JOIN SATELLITE s
+    ON p.id_satellite = s.id_satellite
+LEFT JOIN ORBITE o
+    ON s.id_orbite = o.id_orbite
+LEFT JOIN FENETRE_COM f
+    ON s.id_satellite = f.id_satellite
+GROUP BY
+    m.id_mission,
+    m.nom_mission,
+    m.statut_mission;
+
+/* Select test */
+SELECT *
+FROM v_stats_missions
+ORDER BY id_mission;
