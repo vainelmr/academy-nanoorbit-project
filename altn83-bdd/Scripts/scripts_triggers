@@ -1,0 +1,582 @@
+/* 1. trg_valider_fenetre */
+
+CREATE OR REPLACE TRIGGER trg_valider_fenetre
+BEFORE INSERT ON FENETRE_COM
+FOR EACH ROW
+DECLARE
+    v_statut_satellite  SATELLITE.statut%TYPE;
+    v_statut_station    STATION_SOL.statut%TYPE;
+BEGIN
+    SELECT statut
+    INTO v_statut_satellite
+    FROM SATELLITE
+    WHERE id_satellite = :NEW.id_satellite;
+
+    IF v_statut_satellite = 'Désorbité' THEN
+        RAISE_APPLICATION_ERROR(
+            -20001,
+            'Insertion refusée : le satellite ' || :NEW.id_satellite || ' est désorbité.'
+        );
+    END IF;
+
+    SELECT statut
+    INTO v_statut_station
+    FROM STATION_SOL
+    WHERE code_station = :NEW.code_station;
+
+    IF v_statut_station = 'Maintenance' THEN
+        RAISE_APPLICATION_ERROR(
+            -20002,
+            'Insertion refusée : la station ' || :NEW.code_station || ' est en maintenance.'
+        );
+    END IF;
+END;
+/
+SHOW ERRORS TRIGGER trg_valider_fenetre;
+
+/* 2. trg_no_chevauchement */
+
+CREATE OR REPLACE TRIGGER trg_no_chevauchement
+FOR INSERT OR UPDATE ON FENETRE_COM
+COMPOUND TRIGGER
+
+    TYPE t_fenetre_rec IS RECORD (
+        id_fenetre      FENETRE_COM.id_fenetre%TYPE,
+        id_satellite    FENETRE_COM.id_satellite%TYPE,
+        code_station    FENETRE_COM.code_station%TYPE,
+        date_debut      FENETRE_COM.datetime_debut%TYPE,
+        duree           FENETRE_COM.duree%TYPE
+    );
+
+    TYPE t_fenetre_tab IS TABLE OF t_fenetre_rec INDEX BY PLS_INTEGER;
+    g_fenetres t_fenetre_tab;
+    g_idx NUMBER := 0;
+
+    AFTER EACH ROW IS
+    BEGIN
+        g_idx := g_idx + 1;
+        g_fenetres(g_idx).id_fenetre   := :NEW.id_fenetre;
+        g_fenetres(g_idx).id_satellite := :NEW.id_satellite;
+        g_fenetres(g_idx).code_station := :NEW.code_station;
+        g_fenetres(g_idx).date_debut   := :NEW.datetime_debut;
+        g_fenetres(g_idx).duree        := :NEW.duree;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_nb NUMBER;
+        v_fin TIMESTAMP;
+    BEGIN
+        FOR i IN 1 .. g_idx LOOP
+            v_fin := g_fenetres(i).date_debut
+                     + NUMTODSINTERVAL(g_fenetres(i).duree, 'SECOND');
+
+            SELECT COUNT(*)
+            INTO v_nb
+            FROM FENETRE_COM f
+            WHERE f.id_satellite = g_fenetres(i).id_satellite
+              AND f.id_fenetre <> g_fenetres(i).id_fenetre
+              AND f.datetime_debut < v_fin
+              AND (f.datetime_debut + NUMTODSINTERVAL(f.duree, 'SECOND')) > g_fenetres(i).date_debut;
+
+            IF v_nb > 0 THEN
+                RAISE_APPLICATION_ERROR(
+                    -20003,
+                    'Chevauchement refusé : le satellite ' || g_fenetres(i).id_satellite ||
+                    ' a déjà une fenêtre sur cette période.'
+                );
+            END IF;
+
+            SELECT COUNT(*)
+            INTO v_nb
+            FROM FENETRE_COM f
+            WHERE f.code_station = g_fenetres(i).code_station
+              AND f.id_fenetre <> g_fenetres(i).id_fenetre
+              AND f.datetime_debut < v_fin
+              AND (f.datetime_debut + NUMTODSINTERVAL(f.duree, 'SECOND')) > g_fenetres(i).date_debut;
+
+            IF v_nb > 0 THEN
+                RAISE_APPLICATION_ERROR(
+                    -20004,
+                    'Chevauchement refusé : la station ' || g_fenetres(i).code_station ||
+                    ' est déjà occupée sur cette période.'
+                );
+            END IF;
+        END LOOP;
+    END AFTER STATEMENT;
+
+END trg_no_chevauchement;
+/
+SHOW ERRORS TRIGGER trg_no_chevauchement;
+
+/* 3. trg_volume_realise */
+
+CREATE OR REPLACE TRIGGER trg_volume_realise
+BEFORE INSERT OR UPDATE ON FENETRE_COM
+FOR EACH ROW
+BEGIN
+    IF :NEW.statut <> 'Réalisée' THEN
+        :NEW.volume_donnees := NULL;
+    END IF;
+END;
+/
+SHOW ERRORS TRIGGER trg_volume_realise;
+
+/* 4. trg_mission_terminee */
+
+CREATE OR REPLACE TRIGGER trg_mission_terminee
+BEFORE INSERT ON PARTICIPATION
+FOR EACH ROW
+DECLARE
+    v_statut_mission    MISSION.statut_mission%TYPE;
+    v_statut_satellite  SATELLITE.statut%TYPE;
+BEGIN
+    SELECT statut_mission
+    INTO v_statut_mission
+    FROM MISSION
+    WHERE id_mission = :NEW.id_mission;
+
+    IF v_statut_mission = 'Terminée' THEN
+        RAISE_APPLICATION_ERROR(
+            -20005,
+            'Insertion refusée : la mission ' || :NEW.id_mission || ' est terminée.'
+        );
+    END IF;
+
+    SELECT statut
+    INTO v_statut_satellite
+    FROM SATELLITE
+    WHERE id_satellite = :NEW.id_satellite;
+
+    IF v_statut_satellite = 'Désorbité' THEN
+        RAISE_APPLICATION_ERROR(
+            -20006,
+            'Insertion refusée : le satellite ' || :NEW.id_satellite || ' est désorbité.'
+        );
+    END IF;
+END;
+/
+SHOW ERRORS TRIGGER trg_mission_terminee;
+
+/* 5. trg_historique_statut */
+
+CREATE OR REPLACE TRIGGER trg_historique_statut
+AFTER UPDATE OF statut ON SATELLITE
+FOR EACH ROW
+BEGIN
+IF NVL(:OLD.statut, '#NULL#') <> NVL(:NEW.statut, '#NULL#') THEN
+INSERT INTO HISTORIQUE_STATUT (
+id_satellite,
+ancien_statut,
+nouveau_statut,
+date_changement,
+motif
+)
+VALUES (
+:NEW.id_satellite,
+:OLD.statut,
+:NEW.statut,
+SYSTIMESTAMP,
+'Changement de statut automatique tracé par trigger'
+);
+END IF;
+END;
+/
+SHOW ERRORS TRIGGER trg_historique_statut;
+
+/* TESTS TRIGGERS */
+
+SET SERVEROUTPUT ON;
+
+/* T1 - TRG_VALIDER_FENETRE */
+
+/* Cas valide T1 : Insertion d'une fenêtre pour un satellite opérationnelet une station active.
+Résultat attendu => insertion acceptée */
+
+SAVEPOINT sp_t1_valide;
+
+BEGIN
+    INSERT INTO FENETRE_COM (
+        datetime_debut,
+        duree,
+        elevation_max,
+        volume_donnees,
+        statut,
+        id_satellite,
+        code_station
+    ) VALUES (
+        TO_TIMESTAMP('2024-02-10 12:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+        240,
+        65.0,
+        NULL,
+        'Planifiée',
+        'SAT-001',
+        'GS-KIR-01'
+    );
+
+    DBMS_OUTPUT.PUT_LINE('OK T1 valide : insertion acceptée.');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('ECHEC T1 valide : ' || SQLERRM);
+END;
+/
+
+ROLLBACK TO sp_t1_valide;
+
+/* Cas erreur 1 T1: Insertion d'une fenêtre pour un satellite désorbité.
+Résultat attendu => insertion refusée */
+
+BEGIN
+    INSERT INTO FENETRE_COM (
+        datetime_debut,
+        duree,
+        elevation_max,
+        volume_donnees,
+        statut,
+        id_satellite,
+        code_station
+    ) VALUES (
+        TO_TIMESTAMP('2024-02-10 10:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+        300,
+        60.0,
+        NULL,
+        'Planifiée',
+        'SAT-005',
+        'GS-TLS-01'
+    );
+END;
+/
+
+/* Cas erreur 2 T1: Insertion d'une fenêtre sur une station en maintenance.
+Résultat attendu => insertion refusée */
+
+BEGIN
+    INSERT INTO FENETRE_COM (
+        datetime_debut,
+        duree,
+        elevation_max,
+        volume_donnees,
+        statut,
+        id_satellite,
+        code_station
+    ) VALUES (
+        TO_TIMESTAMP('2024-02-10 11:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+        300,
+        60.0,
+        NULL,
+        'Planifiée',
+        'SAT-001',
+        'GS-SGP-01'
+    );
+END;
+/
+
+/* T2 - TRG_NO_CHEVAUCHEMENT */
+
+/* Cas valide T2 : Insertion d'une fenêtre sans chevauchement.
+Résultat attendu => insertion acceptée */
+
+SAVEPOINT sp_t2_valide;
+
+BEGIN
+    INSERT INTO FENETRE_COM (
+        datetime_debut,
+        duree,
+        elevation_max,
+        volume_donnees,
+        statut,
+        id_satellite,
+        code_station
+    ) VALUES (
+        TO_TIMESTAMP('2024-02-12 09:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+        200,
+        58.0,
+        NULL,
+        'Planifiée',
+        'SAT-002',
+        'GS-KIR-01'
+    );
+
+    DBMS_OUTPUT.PUT_LINE('OK T2 valide : insertion sans chevauchement acceptée.');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE(' ');
+END;
+/
+
+ROLLBACK TO sp_t2_valide;
+
+/* Cas erreur 1 T2: Chevauchement sur le même satellite.
+SAT-001 a déjà une fenêtre le 2024-01-15 à 09:14:00 d'une durée de 420 secondes.
+Résultat attendu => insertion refusée */
+
+BEGIN
+    INSERT INTO FENETRE_COM (
+        datetime_debut,
+        duree,
+        elevation_max,
+        volume_donnees,
+        statut,
+        id_satellite,
+        code_station
+    ) VALUES (
+        TO_TIMESTAMP('2024-01-15 09:16:00', 'YYYY-MM-DD HH24:MI:SS'),
+        180,
+        70.0,
+        NULL,
+        'Planifiée',
+        'SAT-001',
+        'GS-TLS-01'
+    );
+END;
+/
+
+/* Cas erreur 2 T2: Chevauchement sur la même station.
+GS-KIR-01 a déjà une fenêtre le 2024-01-16 à 08:30:00 d'une durée de 540 secondes.
+Résultat attendu => insertion refusée */
+
+BEGIN
+    INSERT INTO FENETRE_COM (
+        datetime_debut,
+        duree,
+        elevation_max,
+        volume_donnees,
+        statut,
+        id_satellite,
+        code_station
+    ) VALUES (
+        TO_TIMESTAMP('2024-01-16 08:35:00', 'YYYY-MM-DD HH24:MI:SS'),
+        180,
+        75.0,
+        NULL,
+        'Planifiée',
+        'SAT-002',
+        'GS-KIR-01'
+    );
+END;
+/
+
+/* T3 - TRG_VOLUME_REALISE */
+
+/* Cas valide T3 : Fenêtre Réalisée avec volume renseigné.
+Résultat attendu => insertion acceptée et volume conservé */
+
+SAVEPOINT sp_t3_valide;
+
+INSERT INTO FENETRE_COM (
+    datetime_debut,
+    duree,
+    elevation_max,
+    volume_donnees,
+    statut,
+    id_satellite,
+    code_station
+) VALUES (
+    TO_TIMESTAMP('2024-02-13 15:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+    220,
+    62.0,
+    777,
+    'Réalisée',
+    'SAT-003',
+    'GS-TLS-01'
+);
+
+DECLARE
+    v_volume FENETRE_COM.volume_donnees%TYPE;
+BEGIN
+    SELECT volume_donnees
+    INTO v_volume
+    FROM FENETRE_COM
+    WHERE datetime_debut = TO_TIMESTAMP('2024-02-13 15:00:00', 'YYYY-MM-DD HH24:MI:SS')
+      AND id_satellite = 'SAT-003'
+      AND code_station = 'GS-TLS-01';
+
+    IF v_volume = 777 THEN
+        DBMS_OUTPUT.PUT_LINE('OK T3 valide : volume conservé.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('ECHEC T3 valide : volume non conservé.');
+    END IF;
+END;
+/
+
+ROLLBACK TO sp_t3_valide;
+
+/* Cas erreur métier T3 : Fenêtre Planifiée avec volume renseigné.
+Résultat attendu => insertion acceptée mais volume_donnees forcé à NULL */
+
+SAVEPOINT sp_t3_erreur;
+
+INSERT INTO FENETRE_COM (
+    datetime_debut,
+    duree,
+    elevation_max,
+    volume_donnees,
+    statut,
+    id_satellite,
+    code_station
+) VALUES (
+    TO_TIMESTAMP('2024-02-13 14:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+    220,
+    62.0,
+    999,
+    'Planifiée',
+    'SAT-003',
+    'GS-TLS-01'
+);
+
+DECLARE
+    v_volume FENETRE_COM.volume_donnees%TYPE;
+BEGIN
+    SELECT volume_donnees
+    INTO v_volume
+    FROM FENETRE_COM
+    WHERE datetime_debut = TO_TIMESTAMP('2024-02-13 14:00:00', 'YYYY-MM-DD HH24:MI:SS')
+      AND id_satellite = 'SAT-003'
+      AND code_station = 'GS-TLS-01';
+
+    IF v_volume IS NULL THEN
+        DBMS_OUTPUT.PUT_LINE('OK T3 contrôle : volume forcé à NULL.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('ECHEC T3 contrôle : volume non null.');
+    END IF;
+END;
+/
+
+ROLLBACK TO sp_t3_erreur;
+
+/* T4 - TRG_MISSION_TERMINEE */
+
+/* Cas valide T4 : Ajout d'un satellite non désorbité à une mission active.
+Résultat attendu => insertion acceptée */
+
+SAVEPOINT sp_t4_valide;
+
+BEGIN
+    INSERT INTO PARTICIPATION (
+        id_satellite,
+        id_mission,
+        role_satellite,
+        commentaire
+    ) VALUES (
+        'SAT-002',
+        'MSN-COAST-2024',
+        'Satellite d appui',
+        NULL
+    );
+
+    DBMS_OUTPUT.PUT_LINE('OK T4 valide : insertion acceptée.');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('ECHEC T4 valide : ' || SQLERRM);
+END;
+/
+
+ROLLBACK TO sp_t4_valide;
+
+/* Cas erreur 1 T4: Ajout d'un satellite à une mission terminée.
+Résultat attendu => insertion refusée */
+
+BEGIN
+    INSERT INTO PARTICIPATION (
+        id_satellite,
+        id_mission,
+        role_satellite,
+        commentaire
+    ) VALUES (
+        'SAT-003',
+        'MSN-DEF-2022',
+        'Satellite de relais',
+        NULL
+    );
+END;
+/
+
+/* Cas erreur 2 T4: Ajout d'un satellite désorbité à une mission active.
+Résultat attendu => insertion refusée */
+
+BEGIN
+    INSERT INTO PARTICIPATION (
+        id_satellite,
+        id_mission,
+        role_satellite,
+        commentaire
+    ) VALUES (
+        'SAT-005',
+        'MSN-ARC-2023',
+        'Satellite de secours',
+        NULL
+    );
+END;
+/
+
+/* T5 - TRG_HISTORIQUE_STATUT */
+
+/* Cas valide T5 : Changement de statut d'un satellite.
+Résultat attendu => update accepté et  insertion d'une ligne dans HISTORIQUE_STATUT */
+
+SAVEPOINT sp_t5_valide;
+
+DECLARE
+    v_avant NUMBER;
+    v_apres NUMBER;
+BEGIN
+    SELECT COUNT(*)
+    INTO v_avant
+    FROM HISTORIQUE_STATUT
+    WHERE id_satellite = 'SAT-004';
+
+    UPDATE SATELLITE
+    SET statut = 'Défaillant'
+    WHERE id_satellite = 'SAT-004';
+
+    SELECT COUNT(*)
+    INTO v_apres
+    FROM HISTORIQUE_STATUT
+    WHERE id_satellite = 'SAT-004';
+
+    IF v_apres = v_avant + 1 THEN
+        DBMS_OUTPUT.PUT_LINE('OK T5 valide : historique ajouté.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('ECHEC T5 valide : historique non ajouté.');
+    END IF;
+END;
+/
+
+ROLLBACK TO sp_t5_valide;
+
+/* Cas "non déclenchement" T5 : Mise à jour du statut avec la même valeur.
+Résultat attendu => update accepté mais aucune nouvelle ligne dans HISTORIQUE_STATUT */
+
+SAVEPOINT sp_t5_same;
+
+DECLARE
+    v_statut SATELLITE.statut%TYPE;
+    v_avant NUMBER;
+    v_apres NUMBER;
+BEGIN
+    SELECT statut INTO v_statut
+    FROM SATELLITE
+    WHERE id_satellite = 'SAT-001';
+
+    SELECT COUNT(*)
+    INTO v_avant
+    FROM HISTORIQUE_STATUT
+    WHERE id_satellite = 'SAT-001';
+
+    UPDATE SATELLITE
+    SET statut = v_statut
+    WHERE id_satellite = 'SAT-001';
+
+    SELECT COUNT(*)
+    INTO v_apres
+    FROM HISTORIQUE_STATUT
+    WHERE id_satellite = 'SAT-001';
+
+    IF v_apres = v_avant THEN
+        DBMS_OUTPUT.PUT_LINE('OK T5 non déclenchement : aucune ligne ajoutée.');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('ECHEC T5 non déclenchement : une ligne a été ajoutée à tort.');
+    END IF;
+END;
+/
+
+ROLLBACK TO sp_t5_same;

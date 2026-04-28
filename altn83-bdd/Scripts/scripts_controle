@@ -1,0 +1,91 @@
+/* 1. Vérification de la table HISTORIQUE_STATUT */
+
+SELECT table_name
+FROM user_tables
+WHERE table_name = 'HISTORIQUE_STATUT';
+
+/* 2. Vérification des triggers attendus */
+
+SELECT
+    trigger_name,
+    trigger_type,
+    triggering_event,
+    table_name,
+    status
+FROM user_triggers
+WHERE trigger_name IN (
+    'TRG_VALIDER_FENETRE',
+    'TRG_NO_CHEVAUCHEMENT',
+    'TRG_VOLUME_REALISE',
+    'TRG_MISSION_TERMINEE',
+    'TRG_HISTORIQUE_STATUT'
+)
+ORDER BY trigger_name;
+
+/* 3. Nombre de triggers NanoOrbit présents */
+
+SELECT COUNT(*) AS nb_triggers_nanoorbit
+FROM user_triggers
+WHERE trigger_name IN (
+    'TRG_VALIDER_FENETRE',
+    'TRG_NO_CHEVAUCHEMENT',
+    'TRG_VOLUME_REALISE',
+    'TRG_MISSION_TERMINEE',
+    'TRG_HISTORIQUE_STATUT'
+);
+
+/* 4. Triggers manquants */
+
+WITH expected_triggers AS (
+    SELECT 'TRG_VALIDER_FENETRE' AS trigger_name FROM dual UNION ALL
+    SELECT 'TRG_NO_CHEVAUCHEMENT' FROM dual UNION ALL
+    SELECT 'TRG_VOLUME_REALISE' FROM dual UNION ALL
+    SELECT 'TRG_MISSION_TERMINEE' FROM dual UNION ALL
+    SELECT 'TRG_HISTORIQUE_STATUT' FROM dual
+)
+SELECT e.trigger_name AS trigger_manquant
+FROM expected_triggers e
+LEFT JOIN user_triggers t
+    ON t.trigger_name = e.trigger_name
+WHERE t.trigger_name IS NULL
+ORDER BY e.trigger_name;
+
+/* 5. Erreurs de compilation sur les triggers */
+
+SELECT
+    name,
+    type,
+    line,
+    position,
+    text
+FROM user_errors
+WHERE name IN (
+    'TRG_VALIDER_FENETRE',
+    'TRG_NO_CHEVAUCHEMENT',
+    'TRG_VOLUME_REALISE',
+    'TRG_MISSION_TERMINEE',
+    'TRG_HISTORIQUE_STATUT'
+)
+ORDER BY name, sequence;
+
+/* 6. Vérification de la structure de HISTORIQUE_STATUT */
+
+SELECT
+    column_id,
+    column_name,
+    data_type,
+    data_length,
+    nullable
+FROM user_tab_columns
+WHERE table_name = 'HISTORIQUE_STATUT'
+ORDER BY column_id;
+
+/* 7. Contraintes sur HISTORIQUE_STATUT */
+
+SELECT
+    uc.constraint_name,
+    uc.constraint_type,
+    uc.status
+FROM user_constraints uc
+WHERE uc.table_name = 'HISTORIQUE_STATUT'
+ORDER BY uc.constraint_name;
