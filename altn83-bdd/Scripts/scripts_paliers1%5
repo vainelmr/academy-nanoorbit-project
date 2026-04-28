@@ -1,0 +1,869 @@
+/* PALIER 1 - EXERCICE 1 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+    v_nb_satellites NUMBER;
+    v_nb_stations   NUMBER;
+    v_nb_missions   NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO v_nb_satellites FROM SATELLITE;
+    SELECT COUNT(*) INTO v_nb_stations   FROM STATION_SOL;
+    SELECT COUNT(*) INTO v_nb_missions   FROM MISSION;
+
+    DBMS_OUTPUT.PUT_LINE('Bienvenue dans le système NanoOrbit');
+    DBMS_OUTPUT.PUT_LINE('Nombre de satellites : ' || v_nb_satellites);
+    DBMS_OUTPUT.PUT_LINE('Nombre de stations   : ' || v_nb_stations);
+    DBMS_OUTPUT.PUT_LINE('Nombre de missions   : ' || v_nb_missions);
+END;
+/
+
+-- Attendu : 5 satellites, 3 stations, 3 missions
+
+/* PALIER 1 - EXERCICE 2 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+    v_nom_satellite      SATELLITE.nom_satellite%TYPE;
+    v_date_lancement     SATELLITE.date_lancement%TYPE;
+    v_masse              SATELLITE.masse%TYPE;
+    v_format_cubesat     SATELLITE.format_cubesat%TYPE;
+    v_statut             SATELLITE.statut%TYPE;
+    v_duree_vie_prevue   SATELLITE.duree_vie_prevue%TYPE;
+    v_capacite_batterie  SATELLITE.capacite_batterie%TYPE;
+BEGIN
+    SELECT nom_satellite,
+           date_lancement,
+           masse,
+           format_cubesat,
+           statut,
+           duree_vie_prevue,
+           capacite_batterie
+    INTO   v_nom_satellite,
+           v_date_lancement,
+           v_masse,
+           v_format_cubesat,
+           v_statut,
+           v_duree_vie_prevue,
+           v_capacite_batterie
+    FROM SATELLITE
+    WHERE id_satellite = 'SAT-001';
+
+    DBMS_OUTPUT.PUT_LINE('Caractéristiques du satellite SAT-001');
+    DBMS_OUTPUT.PUT_LINE('Nom : ' || v_nom_satellite);
+    DBMS_OUTPUT.PUT_LINE('Date de lancement : ' || TO_CHAR(v_date_lancement, 'DD/MM/YYYY'));
+    DBMS_OUTPUT.PUT_LINE('Masse : ' || v_masse || ' kg');
+    DBMS_OUTPUT.PUT_LINE('Format CubeSat : ' || v_format_cubesat);
+    DBMS_OUTPUT.PUT_LINE('Statut : ' || v_statut);
+    DBMS_OUTPUT.PUT_LINE('Durée de vie prévue : ' || v_duree_vie_prevue || ' mois');
+    DBMS_OUTPUT.PUT_LINE('Capacité batterie : ' || v_capacite_batterie || ' Wh');
+END;
+/
+
+-- Attendu : NanoOrbit-Alpha, 15/03/2022, 1.3 kg, 3U, Opérationnel, 60 mois, 20 Wh
+
+/* PALIER 2 - EXERCICE 3 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+    v_satellite SATELLITE%ROWTYPE;
+BEGIN
+    SELECT *
+    INTO v_satellite
+    FROM SATELLITE
+    WHERE id_satellite = 'SAT-004';
+
+    DBMS_OUTPUT.PUT_LINE('Informations du satellite ' || v_satellite.id_satellite);
+    DBMS_OUTPUT.PUT_LINE('Statut : ' || v_satellite.statut);
+    DBMS_OUTPUT.PUT_LINE('Capacité batterie : ' || v_satellite.capacite_batterie || ' Wh');
+END;
+/
+
+-- Attendu : statut En veille, capacité batterie 40 Wh
+
+/* PALIER 2 - EXERCICE 4 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_ref_instrument INSTRUMENT.ref_instrument%TYPE := 'INS-AIS-01';
+/*v_ref_instrument INSTRUMENT.ref_instrument%TYPE := 'INS-CAM-01';*/
+v_modele INSTRUMENT.modele%TYPE;
+v_type INSTRUMENT.type_instrument%TYPE;
+v_resolution VARCHAR2(20);
+BEGIN
+SELECT modele,
+type_instrument,
+NVL(TO_CHAR(resolution), 'N/A')
+INTO v_modele,
+v_type,
+v_resolution
+FROM INSTRUMENT
+WHERE ref_instrument = v_ref_instrument;
+
+DBMS_OUTPUT.PUT_LINE('Informations de l''instrument ' || v_ref_instrument);
+DBMS_OUTPUT.PUT_LINE('Modèle : ' || v_modele);
+DBMS_OUTPUT.PUT_LINE('Type : ' || v_type);
+DBMS_OUTPUT.PUT_LINE('Résolution : ' || v_resolution);
+END;
+/
+
+-- Test 1 : INS-AIS-01
+-- Attendu : ShipTrack-V2, Récepteur AIS, résolution N/A
+
+-- Test 2 : INS-CAM-01
+-- Attendu : PlanetScope-Mini, Caméra optique, résolution 3
+
+/* PALIER 3 - EXERCICE 5 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-001';
+/*v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-004';*/
+/*v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-005';*/
+v_nom_satellite SATELLITE.nom_satellite%TYPE;
+v_statut SATELLITE.statut%TYPE;
+v_date_lancement SATELLITE.date_lancement%TYPE;
+v_duree_vie_prevue SATELLITE.duree_vie_prevue%TYPE;
+v_duree_restante NUMBER;
+v_categorie VARCHAR2(100);
+BEGIN
+SELECT nom_satellite,
+statut,
+date_lancement,
+duree_vie_prevue
+INTO v_nom_satellite,
+v_statut,
+v_date_lancement,
+v_duree_vie_prevue
+FROM SATELLITE
+WHERE id_satellite = v_id_satellite;
+
+v_duree_restante := v_duree_vie_prevue - FLOOR(MONTHS_BETWEEN(SYSDATE, v_date_lancement));
+
+IF v_statut = 'Désorbité' THEN
+v_categorie := 'Satellite hors service définitif';
+ELSIF v_statut = 'Défaillant' THEN
+v_categorie := 'Satellite en anomalie critique';
+ELSIF v_statut = 'En veille' THEN
+v_categorie := 'Satellite temporairement inactif';
+ELSIF v_statut = 'Opérationnel' AND v_duree_restante > 24 THEN
+v_categorie := 'Satellite opérationnel avec bonne marge de vie';
+ELSIF v_statut = 'Opérationnel' AND v_duree_restante BETWEEN 1 AND 24 THEN
+v_categorie := 'Satellite opérationnel en fin de vie';
+ELSE
+v_categorie := 'Satellite en fin de mission ou durée dépassée';
+END IF;
+
+DBMS_OUTPUT.PUT_LINE('Analyse du satellite ' || v_id_satellite);
+DBMS_OUTPUT.PUT_LINE('Nom : ' || v_nom_satellite);
+DBMS_OUTPUT.PUT_LINE('Statut : ' || v_statut);
+DBMS_OUTPUT.PUT_LINE('Durée de vie prévue : ' || v_duree_vie_prevue || ' mois');
+DBMS_OUTPUT.PUT_LINE('Durée restante estimée : ' || v_duree_restante || ' mois');
+DBMS_OUTPUT.PUT_LINE('Catégorie : ' || v_categorie);
+END;
+/
+
+-- Test 1 : SAT-001
+-- Attendu : statut Opérationnel, catégorie selon durée restante
+
+-- Test 2 : SAT-004
+-- Attendu : catégorie Satellite temporairement inactif
+
+-- Test 3 : SAT-005
+-- Attendu : catégorie Satellite hors service définitif
+
+/* PALIER 3 - EXERCICE 6 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-001';
+/*v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-003';*/
+/*v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-005';*/
+v_nom_satellite SATELLITE.nom_satellite%TYPE;
+v_type_orbite ORBITE.type_orbite%TYPE;
+v_altitude ORBITE.altitude%TYPE;
+v_periode ORBITE.periode_orbitale%TYPE;
+v_description VARCHAR2(100);
+v_vitesse NUMBER(10,2);
+BEGIN
+SELECT s.nom_satellite,
+o.type_orbite,
+o.altitude,
+o.periode_orbitale
+INTO v_nom_satellite,
+v_type_orbite,
+v_altitude,
+v_periode
+FROM SATELLITE s
+JOIN ORBITE o ON s.id_orbite = o.id_orbite
+WHERE s.id_satellite = v_id_satellite;
+
+v_description :=
+CASE v_type_orbite
+WHEN 'LEO' THEN 'Orbite basse terrestre'
+WHEN 'MEO' THEN 'Orbite terrestre moyenne'
+WHEN 'SSO' THEN 'Orbite héliosynchrone'
+WHEN 'GEO' THEN 'Orbite géostationnaire'
+ELSE 'Type d''orbite inconnu'
+END;
+
+v_vitesse := (2 * ACOS(-1) * (6371 + v_altitude)) / v_periode;
+
+DBMS_OUTPUT.PUT_LINE('Analyse orbitale du satellite ' || v_id_satellite);
+DBMS_OUTPUT.PUT_LINE('Nom : ' || v_nom_satellite);
+DBMS_OUTPUT.PUT_LINE('Type d''orbite : ' || v_type_orbite);
+DBMS_OUTPUT.PUT_LINE('Description : ' || v_description);
+DBMS_OUTPUT.PUT_LINE('Altitude : ' || v_altitude || ' km');
+DBMS_OUTPUT.PUT_LINE('Période orbitale : ' || v_periode || ' min');
+DBMS_OUTPUT.PUT_LINE('Vitesse orbitale approximative : ' || ROUND(v_vitesse, 2) || ' km/min');
+END;
+/
+
+-- Test 1 : SAT-001
+-- Attendu : SSO, Orbite héliosynchrone
+
+-- Test 2 : SAT-003
+-- Attendu : SSO, Orbite héliosynchrone
+
+-- Test 3 : SAT-005
+-- Attendu : LEO, Orbite basse terrestre
+
+/* PALIER 3 - EXERCICE 7 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_code_station STATION_SOL.code_station%TYPE := 'GS-TLS-01';
+v_nom_station STATION_SOL.nom_station%TYPE;
+v_debit_max STATION_SOL.debit_max%TYPE;
+v_volume_theo NUMBER(10,2);
+BEGIN
+SELECT nom_station, debit_max
+INTO v_nom_station, v_debit_max
+FROM STATION_SOL
+WHERE code_station = v_code_station;
+
+DBMS_OUTPUT.PUT_LINE('Grille des volumes théoriques - ' || v_code_station);
+DBMS_OUTPUT.PUT_LINE('Station : ' || v_nom_station);
+DBMS_OUTPUT.PUT_LINE('Débit max : ' || v_debit_max || ' Mbps');
+DBMS_OUTPUT.PUT_LINE('---------------------------------------------');
+
+FOR v_duree_min IN 5 .. 15 LOOP
+v_volume_theo := (v_debit_max * (v_duree_min * 60)) / 8;
+
+DBMS_OUTPUT.PUT_LINE(
+'Durée : ' || v_duree_min || ' min'
+|| ' -> Volume théorique : '
+|| ROUND(v_volume_theo, 2) || ' Mo'
+);
+END LOOP;
+END;
+/
+
+-- Attendu : Toulouse Ground Station, 150 Mbps, volumes théoriques de 5 à 15 min
+
+/* PALIER 4 - EXERCICE 8 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_nouveau_statut SATELLITE.statut%TYPE := 'Défaillant';
+BEGIN
+UPDATE SATELLITE
+SET statut = v_nouveau_statut
+WHERE statut = 'En veille';
+/*WHERE statut = 'Opérationnel';*/
+
+DBMS_OUTPUT.PUT_LINE('Nombre de satellites mis à jour : ' || SQL%ROWCOUNT);
+DBMS_OUTPUT.PUT_LINE('Nouveau statut appliqué : ' || v_nouveau_statut);
+
+ROLLBACK;
+END;
+/
+
+-- Test 1 : WHERE statut = 'En veille'
+-- Attendu : 1 ligne modifiée
+
+-- Test 2 : WHERE statut = 'Opérationnel'
+-- Attendu : 3 lignes modifiées
+
+/* PALIER 4 - EXERCICE 9 */
+
+SET SERVEROUTPUT ON;
+
+BEGIN
+FOR rec IN (
+SELECT
+s.id_satellite,
+s.nom_satellite,
+s.statut,
+o.type_orbite,
+o.altitude,
+i.ref_instrument,
+i.type_instrument,
+i.modele,
+e.etat_fonctionnement
+FROM SATELLITE s
+JOIN ORBITE o
+ON s.id_orbite = o.id_orbite
+LEFT JOIN EMBARQUEMENT e
+ON s.id_satellite = e.id_satellite
+LEFT JOIN INSTRUMENT i
+ON e.ref_instrument = i.ref_instrument
+ORDER BY s.id_satellite, i.ref_instrument
+) LOOP
+DBMS_OUTPUT.PUT_LINE(
+'Satellite : ' || rec.id_satellite || ' - ' || rec.nom_satellite
+);
+DBMS_OUTPUT.PUT_LINE(
+' Statut : ' || rec.statut
+|| ' | Orbite : ' || rec.type_orbite
+|| ' (' || rec.altitude || ' km)'
+);
+DBMS_OUTPUT.PUT_LINE(
+' Instrument : ' || rec.ref_instrument
+|| ' | Type : ' || rec.type_instrument
+|| ' | Modèle : ' || rec.modele
+|| ' | État : ' || rec.etat_fonctionnement
+);
+DBMS_OUTPUT.PUT_LINE('--------------------------------------------------');
+END LOOP;
+END;
+/
+
+-- Attendu : affichage des 7 embarquements avec détails sur les satellites, orbites et instruments associés
+
+/* PALIER 4 - EXERCICE 10 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+CURSOR c_satellites_operationnels IS
+SELECT
+s.id_satellite,
+s.nom_satellite,
+f.datetime_debut,
+st.code_station,
+st.nom_station
+FROM SATELLITE s
+JOIN FENETRE_COM f
+ON s.id_satellite = f.id_satellite
+JOIN STATION_SOL st
+ON f.code_station = st.code_station
+WHERE s.statut = 'Opérationnel'
+AND f.datetime_debut = (
+SELECT MAX(f2.datetime_debut)
+FROM FENETRE_COM f2
+WHERE f2.id_satellite = s.id_satellite
+)
+ORDER BY s.id_satellite;
+
+v_id_satellite SATELLITE.id_satellite%TYPE;
+v_nom_satellite SATELLITE.nom_satellite%TYPE;
+v_datetime FENETRE_COM.datetime_debut%TYPE;
+v_code_station STATION_SOL.code_station%TYPE;
+v_nom_station STATION_SOL.nom_station%TYPE;
+BEGIN
+OPEN c_satellites_operationnels;
+
+LOOP
+FETCH c_satellites_operationnels
+INTO v_id_satellite,
+v_nom_satellite,
+v_datetime,
+v_code_station,
+v_nom_station;
+
+EXIT WHEN c_satellites_operationnels%NOTFOUND;
+
+DBMS_OUTPUT.PUT_LINE('Satellite : ' || v_id_satellite || ' - ' || v_nom_satellite);
+DBMS_OUTPUT.PUT_LINE('Dernière communication : ' || TO_CHAR(v_datetime, 'DD/MM/YYYY HH24:MI:SS'));
+DBMS_OUTPUT.PUT_LINE('Station : ' || v_code_station || ' - ' || v_nom_station);
+DBMS_OUTPUT.PUT_LINE('--------------------------------------------------');
+END LOOP;
+
+CLOSE c_satellites_operationnels;
+END;
+/
+
+-- Attendu : SAT-001, SAT-002, SAT-003 avec leur station la plus récente
+
+/* PALIER 4 - EXERCICE 11 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_code_station   STATION_SOL.code_station%TYPE := 'GS-TLS-01';
+/*v_code_station   STATION_SOL.code_station%TYPE := 'GS-KIR-01';*/
+/*v_code_station   STATION_SOL.code_station%TYPE := 'GS-SGP-01';*/
+    v_nom_station    STATION_SOL.nom_station%TYPE;
+    v_volume_total   NUMBER(10,1) := 0;
+
+    CURSOR c_fenetres_station (p_code_station STATION_SOL.code_station%TYPE) IS
+        SELECT
+            f.id_fenetre,
+            f.datetime_debut,
+            f.duree,
+            f.statut,
+            NVL(f.volume_donnees, 0) AS volume_donnees,
+            s.id_satellite,
+            s.nom_satellite
+        FROM FENETRE_COM f
+        JOIN SATELLITE s
+            ON f.id_satellite = s.id_satellite
+        WHERE f.code_station = p_code_station
+        ORDER BY f.datetime_debut;
+
+BEGIN
+    SELECT nom_station
+    INTO v_nom_station
+    FROM STATION_SOL
+    WHERE code_station = v_code_station;
+
+    DBMS_OUTPUT.PUT_LINE('Fenêtres de communication de la station ' || v_code_station);
+    DBMS_OUTPUT.PUT_LINE('Nom station : ' || v_nom_station);
+    DBMS_OUTPUT.PUT_LINE('--------------------------------------------------');
+
+    FOR rec IN c_fenetres_station(v_code_station) LOOP
+        DBMS_OUTPUT.PUT_LINE(
+            'Fenêtre #' || rec.id_fenetre
+            || ' | Début : ' || TO_CHAR(rec.datetime_debut, 'DD/MM/YYYY HH24:MI:SS')
+            || ' | Durée : ' || rec.duree || ' s'
+            || ' | Statut : ' || rec.statut
+        );
+
+        DBMS_OUTPUT.PUT_LINE(
+            '  Satellite : ' || rec.id_satellite || ' - ' || rec.nom_satellite
+        );
+
+        DBMS_OUTPUT.PUT_LINE(
+            '  Volume téléchargé : ' || rec.volume_donnees || ' Mo'
+        );
+
+        v_volume_total := v_volume_total + rec.volume_donnees;
+    END LOOP;
+
+    DBMS_OUTPUT.PUT_LINE('Volume total téléchargé pour la station '
+                         || v_code_station || ' : ' || v_volume_total || ' Mo');
+END;
+/
+
+-- Test 1 : GS-TLS-01
+-- Attendu : 3 fenêtres, volume total 890 Mo
+
+-- Test 2 : GS-KIR-01
+-- Attendu : 2 fenêtres, volume total 2930 Mo
+
+-- Test 3 : GS-SGP-01
+-- Attendu : 0 fenêtre, volume total 0 Mo
+
+/* PHASE 3 - PALIER 5 - EXERCICE 12 */
+
+SET SERVEROUTPUT ON;
+
+DECLARE
+v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-001';
+/*v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-999';*/
+/*v_id_satellite SATELLITE.id_satellite%TYPE := 'SAT-005';*/
+v_nom_satellite SATELLITE.nom_satellite%TYPE;
+v_statut SATELLITE.statut%TYPE;
+v_format_cubesat SATELLITE.format_cubesat%TYPE;
+BEGIN
+SELECT nom_satellite,
+statut,
+format_cubesat
+INTO v_nom_satellite,
+v_statut,
+v_format_cubesat
+FROM SATELLITE
+WHERE id_satellite = v_id_satellite;
+
+DBMS_OUTPUT.PUT_LINE('Satellite trouvé : ' || v_id_satellite);
+DBMS_OUTPUT.PUT_LINE('Nom : ' || v_nom_satellite);
+DBMS_OUTPUT.PUT_LINE('Statut : ' || v_statut);
+DBMS_OUTPUT.PUT_LINE('Format CubeSat : ' || v_format_cubesat);
+
+EXCEPTION
+WHEN NO_DATA_FOUND THEN
+DBMS_OUTPUT.PUT_LINE(
+'Aucun satellite trouvé pour l''identifiant ' || v_id_satellite
+);
+
+WHEN OTHERS THEN
+DBMS_OUTPUT.PUT_LINE(
+'Erreur inattendue lors de la recherche du satellite '
+|| v_id_satellite || ' : ' || SQLERRM
+);
+END;
+/
+
+-- Test 1 : SAT-001
+-- Attendu : NanoOrbit-Alpha, Opérationnel, 3U
+
+-- Test 2 : SAT-999
+-- Attendu : aucun satellite trouvé
+
+-- Test 3 : SAT-005
+-- Attendu : NanoOrbit-Epsilon, Désorbité, 12U
+
+/* PALIER 5 - EXERCICE 13 */
+
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE PROCEDURE valider_fenetre_avant_insertion (
+p_id_satellite IN SATELLITE.id_satellite%TYPE,
+p_code_station IN STATION_SOL.code_station%TYPE,
+p_datetime_debut IN FENETRE_COM.datetime_debut%TYPE,
+p_duree IN FENETRE_COM.duree%TYPE
+)
+IS
+v_statut_satellite SATELLITE.statut%TYPE;
+v_statut_station STATION_SOL.statut%TYPE;
+v_nb_chev_sat NUMBER := 0;
+v_nb_chev_station NUMBER := 0;
+v_fin_fenetre TIMESTAMP;
+BEGIN
+
+SELECT statut
+INTO v_statut_satellite
+FROM SATELLITE
+WHERE id_satellite = p_id_satellite;
+
+IF v_statut_satellite <> 'Opérationnel' THEN
+RAISE_APPLICATION_ERROR(
+-20101,
+'Validation refusée : le satellite ' || p_id_satellite ||
+' n''est pas opérationnel.'
+);
+END IF;
+
+SELECT statut
+INTO v_statut_station
+FROM STATION_SOL
+WHERE code_station = p_code_station;
+
+IF v_statut_station <> 'Active' THEN
+RAISE_APPLICATION_ERROR(
+-20102,
+'Validation refusée : la station ' || p_code_station ||
+' n''est pas active.'
+);
+END IF;
+
+IF p_duree < 1 OR p_duree > 900 THEN
+RAISE_APPLICATION_ERROR(
+-20103,
+'Validation refusée : la durée doit être comprise entre 1 et 900 secondes.'
+);
+END IF;
+
+v_fin_fenetre := p_datetime_debut + NUMTODSINTERVAL(p_duree, 'SECOND');
+
+SELECT COUNT(*)
+INTO v_nb_chev_sat
+FROM FENETRE_COM f
+WHERE f.id_satellite = p_id_satellite
+AND f.datetime_debut < v_fin_fenetre
+AND (f.datetime_debut + NUMTODSINTERVAL(f.duree, 'SECOND')) > p_datetime_debut;
+
+IF v_nb_chev_sat > 0 THEN
+RAISE_APPLICATION_ERROR(
+-20104,
+'Validation refusée : chevauchement détecté pour le satellite ' || p_id_satellite || '.'
+);
+END IF;
+
+SELECT COUNT(*)
+INTO v_nb_chev_station
+FROM FENETRE_COM f
+WHERE f.code_station = p_code_station
+AND f.datetime_debut < v_fin_fenetre
+AND (f.datetime_debut + NUMTODSINTERVAL(f.duree, 'SECOND')) > p_datetime_debut;
+
+IF v_nb_chev_station > 0 THEN
+RAISE_APPLICATION_ERROR(
+-20105,
+'Validation refusée : chevauchement détecté pour la station ' || p_code_station || '.'
+);
+END IF;
+
+DBMS_OUTPUT.PUT_LINE('Validation réussie : la fenêtre peut être insérée.');
+
+EXCEPTION
+WHEN NO_DATA_FOUND THEN
+RAISE_APPLICATION_ERROR(
+-20106,
+'Validation refusée : satellite ou station introuvable.'
+);
+END;
+/
+SHOW ERRORS PROCEDURE valider_fenetre_avant_insertion;
+
+/* Tests */
+
+BEGIN
+valider_fenetre_avant_insertion(
+'SAT-001',
+'GS-KIR-01',
+TO_TIMESTAMP('2024-02-20 10:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+300
+);
+END;
+/
+
+BEGIN
+valider_fenetre_avant_insertion(
+'SAT-004',
+'GS-KIR-01',
+TO_TIMESTAMP('2024-02-20 10:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+300
+);
+END;
+/
+
+BEGIN
+valider_fenetre_avant_insertion(
+'SAT-001',
+'GS-SGP-01',
+TO_TIMESTAMP('2024-02-20 10:00:00', 'YYYY-MM-DD HH24:MI:SS'),
+300
+);
+END;
+/
+
+BEGIN
+valider_fenetre_avant_insertion(
+'SAT-001',
+'GS-TLS-01',
+TO_TIMESTAMP('2024-01-15 09:16:00', 'YYYY-MM-DD HH24:MI:SS'),
+180
+);
+END;
+/
+
+BEGIN
+valider_fenetre_avant_insertion(
+'SAT-002',
+'GS-KIR-01',
+TO_TIMESTAMP('2024-01-16 08:35:00', 'YYYY-MM-DD HH24:MI:SS'),
+180
+);
+END;
+/
+
+/* PALIER 5 - EXERCICE 14 */
+
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE PROCEDURE afficher_statut_satellite (
+    p_id IN SATELLITE.id_satellite%TYPE
+)
+IS
+    v_nom_satellite   SATELLITE.nom_satellite%TYPE;
+    v_statut          SATELLITE.statut%TYPE;
+    v_type_orbite     ORBITE.type_orbite%TYPE;
+    v_altitude        ORBITE.altitude%TYPE;
+    v_nb_instr        NUMBER := 0;
+BEGIN
+    
+    SELECT s.nom_satellite,
+           s.statut,
+           o.type_orbite,
+           o.altitude
+    INTO   v_nom_satellite,
+           v_statut,
+           v_type_orbite,
+           v_altitude
+    FROM SATELLITE s
+    JOIN ORBITE o
+      ON s.id_orbite = o.id_orbite
+    WHERE s.id_satellite = p_id;
+
+    DBMS_OUTPUT.PUT_LINE('Satellite : ' || p_id || ' - ' || v_nom_satellite);
+    DBMS_OUTPUT.PUT_LINE('Statut : ' || v_statut);
+    DBMS_OUTPUT.PUT_LINE('Orbite : ' || v_type_orbite || ' (' || v_altitude || ' km)');
+    DBMS_OUTPUT.PUT_LINE('Instruments embarqués :');
+
+    FOR rec IN (
+        SELECT i.ref_instrument,
+               i.type_instrument,
+               i.modele,
+               e.etat_fonctionnement
+        FROM EMBARQUEMENT e
+        JOIN INSTRUMENT i
+          ON e.ref_instrument = i.ref_instrument
+        WHERE e.id_satellite = p_id
+        ORDER BY i.ref_instrument
+    ) LOOP
+        v_nb_instr := v_nb_instr + 1;
+
+        DBMS_OUTPUT.PUT_LINE(
+            ' - ' || rec.ref_instrument
+            || ' | ' || rec.type_instrument
+            || ' | ' || rec.modele
+            || ' | Etat : ' || rec.etat_fonctionnement
+        );
+    END LOOP;
+
+    IF v_nb_instr = 0 THEN
+        DBMS_OUTPUT.PUT_LINE(' - Aucun instrument embarqué');
+    END IF;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE(
+            'Aucun satellite trouvé pour l''identifiant ' || p_id
+        );
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE(
+            'Erreur lors de l''affichage du satellite ' || p_id || ' : ' || SQLERRM
+        );
+END;
+/
+SHOW ERRORS PROCEDURE afficher_statut_satellite;
+
+/* Tests */
+
+BEGIN
+afficher_statut_satellite('SAT-001');
+END;
+/
+
+BEGIN
+    afficher_statut_satellite('SAT-004');
+END;
+/
+
+BEGIN
+    afficher_statut_satellite('SAT-999');
+END;
+/
+
+/* PALIER 5 - EXERCICE 15 */
+
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE PROCEDURE mettre_a_jour_statut (
+    p_id             IN  SATELLITE.id_satellite%TYPE,
+    p_statut         IN  SATELLITE.statut%TYPE,
+    p_ancien_statut  OUT SATELLITE.statut%TYPE
+)
+IS
+BEGIN
+    
+    SELECT statut
+    INTO p_ancien_statut
+    FROM SATELLITE
+    WHERE id_satellite = p_id;
+
+    IF p_statut NOT IN ('Opérationnel', 'En veille', 'Défaillant', 'Désorbité') THEN
+        RAISE_APPLICATION_ERROR(
+            -20201,
+            'Statut invalide : ' || p_statut
+        );
+    END IF;
+
+    UPDATE SATELLITE
+    SET statut = p_statut
+    WHERE id_satellite = p_id;
+
+    DBMS_OUTPUT.PUT_LINE(
+        'Satellite ' || p_id || ' mis à jour : '
+        || p_ancien_statut || ' -> ' || p_statut
+    );
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE(
+            'Aucun satellite trouvé pour l''identifiant ' || p_id
+        );
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE(
+            'Erreur lors de la mise à jour du satellite '
+            || p_id || ' : ' || SQLERRM
+        );
+END;
+/
+SHOW ERRORS PROCEDURE mettre_a_jour_statut;
+
+/* Tests */
+
+DECLARE
+    v_ancien_statut SATELLITE.statut%TYPE;
+BEGIN
+    mettre_a_jour_statut('SAT-004', 'Défaillant', v_ancien_statut);
+    DBMS_OUTPUT.PUT_LINE('Ancien statut retourné : ' || v_ancien_statut);
+    ROLLBACK;
+END;
+/
+
+DECLARE
+    v_ancien_statut SATELLITE.statut%TYPE;
+BEGIN
+    mettre_a_jour_statut('SAT-001', 'En veille', v_ancien_statut);
+    DBMS_OUTPUT.PUT_LINE('Ancien statut retourné : ' || v_ancien_statut);
+    ROLLBACK;
+END;
+/
+
+DECLARE
+    v_ancien_statut SATELLITE.statut%TYPE;
+BEGIN
+    mettre_a_jour_statut('SAT-999', 'En veille', v_ancien_statut);
+END;
+/
+
+DECLARE
+    v_ancien_statut SATELLITE.statut%TYPE;
+BEGIN
+    mettre_a_jour_statut('SAT-001', 'Inconnu', v_ancien_statut);
+    ROLLBACK;
+END;
+/
+
+/* PALIER 5 - EXERCICE 16 */
+
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE FUNCTION calculer_volume_session (
+    p_id_fenetre IN FENETRE_COM.id_fenetre%TYPE
+)
+RETURN NUMBER
+IS
+    v_duree       FENETRE_COM.duree%TYPE;
+    v_debit_max   STATION_SOL.debit_max%TYPE;
+    v_volume      NUMBER(12,2);
+BEGIN
+    SELECT f.duree,
+           s.debit_max
+    INTO   v_duree,
+           v_debit_max
+    FROM FENETRE_COM f
+    JOIN STATION_SOL s
+      ON f.code_station = s.code_station
+    WHERE f.id_fenetre = p_id_fenetre;
+
+    v_volume := (v_debit_max * v_duree) / 8;
+
+    RETURN v_volume;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(
+            -20301,
+            'Aucune fenêtre trouvée pour l''identifiant ' || p_id_fenetre
+        );
+    WHEN OTHERS THEN
+        RAISE_APPLICATION_ERROR(
+            -20302,
+            'Erreur lors du calcul du volume de la fenêtre '
+            || p_id_fenetre || ' : ' || SQLERRM
+        );
+END;
+/
+SHOW ERRORS FUNCTION calculer_volume_session;
