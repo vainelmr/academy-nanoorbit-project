@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.nanoorbit.groundcontrol"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.nanoorbit.groundcontrol"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
