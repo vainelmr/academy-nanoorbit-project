@@ -58,6 +58,7 @@ fun MapScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var userLocation by remember { mutableStateOf<Location?>(null) }
+    var mapReady by remember { mutableStateOf(false) }
 
     val mapView = remember {
         Configuration.getInstance().userAgentValue = context.packageName
@@ -151,9 +152,16 @@ fun MapScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                factory = { mapView },
+                factory = {
+                    mapView.post { mapReady = true }
+                    mapView
+                },
                 update = { view ->
-                    renderStationMarkers(view, context, stations, userLocation)
+                    if (mapReady) {
+                        view.post {
+                            renderStationMarkers(view, context, stations, userLocation)
+                        }
+                    }
                 }
             )
         }
@@ -173,18 +181,22 @@ private fun renderStationMarkers(
     stations: List<StationSol>,
     userLocation: Location?
 ) {
+    if (mapView.windowToken == null) return
+
     mapView.overlays.removeAll { it is Marker }
     stations.forEach { station ->
-        val marker = Marker(mapView).apply {
-            position = GeoPoint(station.latitude, station.longitude)
-            title = station.nomStation
-            snippet = buildSnippet(station, userLocation)
-            icon = buildMarkerIcon(context, station)
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        runCatching {
+            val marker = Marker(mapView).apply {
+                position = GeoPoint(station.latitude, station.longitude)
+                title = station.nomStation
+                snippet = buildSnippet(station, userLocation)
+                icon = buildMarkerIcon(context, station)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            }
+            mapView.overlays.add(marker)
         }
-        mapView.overlays.add(marker)
     }
-    mapView.invalidate()
+    runCatching { mapView.invalidate() }
 }
 
 private fun buildSnippet(station: StationSol, userLocation: Location?): String {
