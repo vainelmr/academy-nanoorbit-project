@@ -6,11 +6,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -38,8 +43,22 @@ fun DetailScreen(
     viewModel: NanoOrbitViewModel = viewModel()
 ) {
     val satellites by viewModel.satellites.collectAsStateWithLifecycle()
+    val favoriteSatelliteIds by viewModel.favoriteSatelliteIds.collectAsStateWithLifecycle()
     val satellite = satellites.find { it.idSatellite == satelliteId }
     val orbite = satellite?.let { sat -> MockData.orbites.find { it.idOrbite == sat.idOrbite } }
+    val embarkedInstruments = remember(satelliteId) {
+        MockData.instrumentRefsBySatelliteId[satelliteId].orEmpty().mapNotNull { ref ->
+            MockData.instruments.find { it.refInstrument == ref }
+        }
+    }
+    val missionRows = remember(satelliteId) {
+        MockData.missionParticipationBySatelliteId[satelliteId].orEmpty()
+    }
+    val missionsForSatellite = remember(missionRows) {
+        missionRows.mapNotNull { row ->
+            MockData.missions.find { it.idMission == row.idMission }?.let { m -> row to m }
+        }
+    }
 
     var showDialog by remember { mutableStateOf(false) }
     var anomalyMessage by remember { mutableStateOf("") }
@@ -111,7 +130,7 @@ fun DetailScreen(
                         TextButton(onClick = onBack) {
                             Text("Retour")
                         }
-                    }
+                    },
                 )
             }
         ) { innerPadding ->
@@ -134,6 +153,8 @@ fun DetailScreen(
         return
     }
 
+    val isFavorite = satellite.idSatellite in favoriteSatelliteIds
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -141,6 +162,14 @@ fun DetailScreen(
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text("Retour")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.toggleFavoriteSatellite(satellite.idSatellite) }) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris",
+                        )
                     }
                 }
             )
@@ -196,7 +225,19 @@ fun DetailScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text("Instruments embarqués", style = MaterialTheme.typography.titleSmall)
-                        Text("Aucun instrument embarqué disponible")
+                        if (embarkedInstruments.isEmpty()) {
+                            Text(
+                                "Aucun instrument référencé pour ce satellite dans le jeu de données de référence.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            embarkedInstruments.forEach { ins ->
+                                Text(
+                                    "• ${ins.refInstrument} — ${ins.typeInstrument} (${ins.modele})",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -210,7 +251,19 @@ fun DetailScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text("Missions", style = MaterialTheme.typography.titleSmall)
-                        Text("Aucune mission active disponible")
+                        if (missionsForSatellite.isEmpty()) {
+                            Text(
+                                "Aucune participation mission enregistrée pour ce satellite dans le jeu de données.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            missionsForSatellite.forEach { (participation, mission) ->
+                                Text(
+                                    text = "• ${mission.nomMission} (${mission.statutMission}) — rôle : ${participation.roleSatellite}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
                     }
                 }
             }
