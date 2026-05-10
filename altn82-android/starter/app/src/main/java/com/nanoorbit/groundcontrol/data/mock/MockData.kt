@@ -14,7 +14,36 @@ import com.nanoorbit.groundcontrol.data.models.TypeOrbite
 import java.time.LocalDate
 import java.time.LocalDateTime
 
+data class MissionParticipationRef(
+    val idMission: String,
+    val roleSatellite: String
+)
+
 object MockData {
+    /** Clé = [Satellite.idSatellite], valeurs = [Instrument.refInstrument] embarqués. */
+    val instrumentRefsBySatelliteId: Map<String, List<String>> = mapOf(
+        "SAT-001" to listOf("INS-CAM-01", "INS-IR-01"),
+        "SAT-002" to listOf("INS-CAM-01"),
+        "SAT-003" to listOf("INS-CAM-01", "INS-SPEC-01"),
+        "SAT-004" to listOf("INS-IR-01"),
+        "SAT-005" to listOf("INS-AIS-01")
+    )
+
+    /** Clé = [Satellite.idSatellite] ; correspond à la table PARTICIPATION. */
+    val missionParticipationBySatelliteId: Map<String, List<MissionParticipationRef>> = mapOf(
+        "SAT-001" to listOf(
+            MissionParticipationRef("MSN-ARC-2023", "Imageur principal"),
+            MissionParticipationRef("MSN-DEF-2022", "Imageur principal")
+        ),
+        "SAT-002" to listOf(MissionParticipationRef("MSN-ARC-2023", "Imageur secondaire")),
+        "SAT-003" to listOf(
+            MissionParticipationRef("MSN-ARC-2023", "Satellite de relais"),
+            MissionParticipationRef("MSN-COAST-2024", "Imageur principal")
+        ),
+        "SAT-004" to listOf(MissionParticipationRef("MSN-COAST-2024", "Satellite de secours")),
+        "SAT-005" to listOf(MissionParticipationRef("MSN-DEF-2022", "Imageur secondaire"))
+    )
+
     val orbites = listOf(
         Orbite(
             idOrbite = "ORB-001",
@@ -197,20 +226,22 @@ object MockData {
             statut = StatutFenetre.REALISEE,
             volumeDonnees = 1680.0
         ),
+        // Date future utilisée pour démontrer les notifications locales.
         FenetreCom(
             idFenetre = "4",
             idSatellite = "SAT-001",
             codeStation = "GS-TLS-01",
-            datetimeDebut = LocalDateTime.parse("2024-01-20T14:22:00"),
+            datetimeDebut = LocalDateTime.now().plusMinutes(20),
             duree = 380,
             statut = StatutFenetre.PLANIFIEE,
             volumeDonnees = null
         ),
+        // Date future utilisée pour démontrer les notifications locales.
         FenetreCom(
             idFenetre = "5",
             idSatellite = "SAT-003",
             codeStation = "GS-TLS-01",
-            datetimeDebut = LocalDateTime.parse("2024-01-21T07:45:00"),
+            datetimeDebut = LocalDateTime.now().plusMinutes(30),
             duree = 290,
             statut = StatutFenetre.PLANIFIEE,
             volumeDonnees = null
