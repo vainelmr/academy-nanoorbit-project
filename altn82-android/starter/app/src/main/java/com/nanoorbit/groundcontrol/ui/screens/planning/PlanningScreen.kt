@@ -26,20 +26,44 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nanoorbit.groundcontrol.data.mock.MockData
 import com.nanoorbit.groundcontrol.data.models.FenetreCom
 import com.nanoorbit.groundcontrol.data.models.StatutFenetre
 import com.nanoorbit.groundcontrol.data.models.StatutSatellite
+import com.nanoorbit.groundcontrol.data.models.Satellite
 import com.nanoorbit.groundcontrol.ui.theme.NanoOrbitTheme
+import com.nanoorbit.groundcontrol.viewmodel.NanoOrbitViewModel
 
 @Composable
 fun PlanningScreen(
+    viewModel: NanoOrbitViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
+    /** Fenêtres : flux Room/cache via le ViewModel (rafraîchi par le repository). */
+    val fenetres by viewModel.fenetres.collectAsStateWithLifecycle()
+    /** Satellites : même flux que le dashboard pour cohérence nom / statut avec le cache. */
+    val satellites by viewModel.satellites.collectAsStateWithLifecycle()
+    val satellitesById = remember(satellites) { satellites.associateBy { it.idSatellite } }
+    PlanningScreenBody(
+        fenetresRoom = fenetres,
+        satellitesById = satellitesById,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun PlanningScreenBody(
+    fenetresRoom: List<FenetreCom>,
+    satellitesById: Map<String, Satellite>,
     modifier: Modifier = Modifier
 ) {
     val stations = remember { MockData.stations }
-    val satellitesById = remember { MockData.satellites.associateBy { it.idSatellite } }
     val stationsByCode = remember { stations.associateBy { it.codeStation } }
-    val allFenetres = remember { MockData.fenetres.sortedBy { it.datetimeDebut } }
+    val allFenetres = remember(fenetresRoom) {
+        fenetresRoom.sortedBy { it.datetimeDebut }
+    }
 
     var selectedStationCode by remember { mutableStateOf<String?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -192,6 +216,9 @@ private fun FenetreItemCard(
 @Composable
 private fun PlanningScreenPreview() {
     NanoOrbitTheme {
-        PlanningScreen()
+        PlanningScreenBody(
+            fenetresRoom = MockData.fenetres,
+            satellitesById = MockData.satellites.associateBy { it.idSatellite }
+        )
     }
 }
